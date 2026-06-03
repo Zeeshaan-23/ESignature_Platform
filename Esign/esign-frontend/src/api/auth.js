@@ -15,3 +15,5 @@ export const registerUser = (email, firstName, lastName, password) =>
   });
 
 export const getMe = () => api.get('/users/me/');
+
+export const logoutUser = () => api.post('/users/logout/');

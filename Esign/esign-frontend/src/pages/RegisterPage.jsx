@@ -46,7 +46,7 @@ export default function RegisterPage() {
         formData.lastName,
         formData.password
       );
-      login(res.data.tokens.access, res.data.tokens.refresh);
+      login(res.data.user);
       navigate('/');
     } catch (err) {
       const data = err.response?.data;

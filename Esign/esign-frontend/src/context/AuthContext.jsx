@@ -1,58 +1,48 @@
 // src/context/AuthContext.jsx
 
 import { createContext, useContext, useState, useEffect } from 'react';
-import { getMe } from '../api/auth';
+import { getMe, logoutUser } from '../api/auth';
 import api from '../api/axios';
 
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
-  const [token, setToken] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // Runs ONCE on mount — restores session from localStorage
+  // Runs ONCE on mount — restores session by checking if we have a valid cookie
   useEffect(() => {
-    const storedToken = localStorage.getItem('access_token');
-
-    if (!storedToken) {
-      setLoading(false);
-      return;
-    }
-
-    // Restore axios header immediately so getMe() is authenticated
-    api.defaults.headers.common['Authorization'] = `Bearer ${storedToken}`;
-    setToken(storedToken);
-
     getMe()
-      .then((res) => setUser(res.data))
+      .then((res) => {
+        setUser(res.data);
+      })
       .catch(() => {
-        // Token expired or invalid — wipe everything
-        localStorage.removeItem('access_token');
-        delete api.defaults.headers.common['Authorization'];
-        setToken(null);
+        // Not authenticated or token expired
+        setUser(null);
       })
       .finally(() => setLoading(false));
   }, []); // Empty deps = mount only, never re-runs
 
-  const login = (accessToken, refreshToken) => {
-  localStorage.setItem('access_token', accessToken);
-  localStorage.setItem('refresh_token', refreshToken);
-  api.defaults.headers.common['Authorization'] = `Bearer ${accessToken}`;
-  setToken(accessToken);
-  getMe().then((res) => setUser(res.data));
-};
-
-  const logout = () => {
-    localStorage.removeItem('access_token');
-    localStorage.removeItem('refresh_token');
-    delete api.defaults.headers.common['Authorization'];
-    setToken(null);
-    setUser(null);
+  const login = (userData) => {
+    setUser(userData);
   };
 
+  const logout = async () => {
+    try {
+      await logoutUser();
+    } catch (err) {
+      console.error("Logout failed", err);
+    } finally {
+      setUser(null);
+    }
+  };
+
+  // We consider the user authenticated if `user` is not null.
+  // Instead of passing `token`, we can pass a boolean `isAuthenticated`.
+  const isAuthenticated = !!user;
+
   return (
-    <AuthContext.Provider value={{ user, token, login, logout, loading }}>
+    <AuthContext.Provider value={{ user, isAuthenticated, login, logout, loading }}>
       {children}
     </AuthContext.Provider>
   );

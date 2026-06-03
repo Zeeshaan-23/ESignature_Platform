@@ -21,7 +21,7 @@ export default function LoginPage() {
 
     try {
       const res = await loginUser(email, password);
-      login(res.data.access, res.data.refresh);
+      login(res.data.user);
       navigate('/');
     } catch (err) {
       setError('Invalid email or password.');

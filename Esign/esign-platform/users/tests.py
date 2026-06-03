@@ -22,9 +22,12 @@ class TestRegistration:
             'role': 'SENDER'
         })
         assert res.status_code == 201
-        assert 'tokens' in res.data
-        assert 'access' in res.data['tokens']
-        assert 'refresh' in res.data['tokens']
+        assert 'user' in res.data
+        # Tokens now in httpOnly cookies, NOT in response body
+        assert 'access_token' in res.cookies
+        assert 'refresh_token' in res.cookies
+        assert res.cookies['access_token']['httponly']
+        assert res.cookies['refresh_token']['httponly']
 
     def test_register_duplicate_email(self, api_client, sender_user):
         res = api_client.post('/api/users/register/', {
@@ -46,14 +49,26 @@ class TestRegistration:
 @pytest.mark.django_db
 class TestLogin:
 
-    def test_login_success(self, api_client, sender_user):
+    def test_login_success_sets_cookies(self, api_client, sender_user):
         res = api_client.post('/api/users/login/', {
             'email': 'sender@test.com',
             'password': 'testpass123'
         })
         assert res.status_code == 200
-        assert 'access' in res.data
-        assert 'refresh' in res.data
+        # Tokens are in httpOnly cookies, NOT in response body
+        assert 'access_token' in res.cookies
+        assert 'refresh_token' in res.cookies
+        assert res.cookies['access_token']['httponly']
+        assert res.cookies['refresh_token']['httponly']
+
+    def test_login_returns_user_profile(self, api_client, sender_user):
+        res = api_client.post('/api/users/login/', {
+            'email': 'sender@test.com',
+            'password': 'testpass123'
+        })
+        assert res.status_code == 200
+        assert 'user' in res.data
+        assert res.data['user']['email'] == 'sender@test.com'
 
     def test_login_wrong_password(self, api_client, sender_user):
         res = api_client.post('/api/users/login/', {
@@ -68,6 +83,50 @@ class TestLogin:
             'password': 'testpass123'
         })
         assert res.status_code == 401
+
+
+@pytest.mark.django_db
+class TestCookieAuth:
+
+    def test_me_with_cookie(self, api_client, sender_user):
+        """Cookie set on login should authenticate subsequent requests."""
+        login_res = api_client.post('/api/users/login/', {
+            'email': 'sender@test.com',
+            'password': 'testpass123'
+        })
+        access_token = login_res.cookies['access_token'].value
+        api_client.cookies['access_token'] = access_token
+        res = api_client.get('/api/users/me/')
+        assert res.status_code == 200
+        assert res.data['email'] == 'sender@test.com'
+
+    def test_token_refresh_sets_new_cookies(self, api_client, sender_user):
+        """Refresh endpoint reads cookie and issues new access cookie."""
+        login_res = api_client.post('/api/users/login/', {
+            'email': 'sender@test.com',
+            'password': 'testpass123'
+        })
+        refresh_token = login_res.cookies['refresh_token'].value
+        api_client.cookies['refresh_token'] = refresh_token
+        res = api_client.post('/api/users/token/refresh/')
+        assert res.status_code == 200
+        assert 'access_token' in res.cookies
+
+    def test_token_refresh_without_cookie_returns_401(self, api_client):
+        res = api_client.post('/api/users/token/refresh/')
+        assert res.status_code == 401
+
+    def test_logout_clears_cookies(self, api_client, sender_user):
+        login_res = api_client.post('/api/users/login/', {
+            'email': 'sender@test.com',
+            'password': 'testpass123'
+        })
+        api_client.cookies['access_token'] = login_res.cookies['access_token'].value
+        res = api_client.post('/api/users/logout/')
+        assert res.status_code == 200
+        # Cookie should be expired/deleted
+        assert res.cookies['access_token']['max-age'] == 0 or \
+               res.cookies['access_token'].value == ''
 
 
 @pytest.mark.django_db

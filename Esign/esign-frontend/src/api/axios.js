@@ -4,13 +4,32 @@ import axios from 'axios';
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL,
+  withCredentials: true, // IMPORTANT: Send cookies with every request
 });
 
-// Request interceptor — attach access token
+// Helper function to get cookie value by name
+function getCookie(name) {
+  let cookieValue = null;
+  if (document.cookie && document.cookie !== '') {
+    const cookies = document.cookie.split(';');
+    for (let i = 0; i < cookies.length; i++) {
+      const cookie = cookies[i].trim();
+      // Does this cookie string begin with the name we want?
+      if (cookie.substring(0, name.length + 1) === (name + '=')) {
+        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+        break;
+      }
+    }
+  }
+  return cookieValue;
+}
+
+// Request interceptor
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('access_token');
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
+  // Attach CSRF token if it exists (Django sets this if CSRF_COOKIE_HTTPONLY=False)
+  const csrfToken = getCookie('csrftoken');
+  if (csrfToken) {
+    config.headers['X-CSRFToken'] = csrfToken;
   }
   return config;
 });
@@ -21,36 +40,28 @@ api.interceptors.response.use(
   async (error) => {
     const originalRequest = error.config;
 
-    // If 401 and we haven't already retried
-    if (error.response?.status === 401 && !originalRequest._retry) {
+    // If 401 and we haven't already retried, and the error isn't from the refresh endpoint itself
+    if (
+      error.response?.status === 401 &&
+      !originalRequest._retry &&
+      !originalRequest.url.includes('/users/token/refresh') &&
+      !originalRequest.url.includes('/users/login')
+    ) {
       originalRequest._retry = true;
 
-      const refreshToken = localStorage.getItem('refresh_token');
-      if (!refreshToken) {
-        // No refresh token — force logout
-        localStorage.removeItem('access_token');
-        localStorage.removeItem('refresh_token');
-        window.location.href = '/login';
-        return Promise.reject(error);
-      }
-
       try {
-        const res = await axios.post(
-           '${import.meta.env.VITE_API_URL}/users/token/refresh',
-          { refresh: refreshToken }
+        // Try to refresh the token via the cookie-based endpoint
+        await axios.post(
+          `${import.meta.env.VITE_API_URL}/users/token/refresh/`,
+          {},
+          { withCredentials: true }
         );
 
-        const newAccessToken = res.data.access;
-        localStorage.setItem('access_token', newAccessToken);
-        api.defaults.headers.common['Authorization'] = `Bearer ${newAccessToken}`;
-
-        // Retry original request with new token
-        originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
+        // If successful, the backend has set a new access_token cookie.
+        // Retry the original request.
         return api(originalRequest);
       } catch (refreshError) {
-        // Refresh token also expired — force logout
-        localStorage.removeItem('access_token');
-        localStorage.removeItem('refresh_token');
+        // Refresh token also expired or invalid — force logout
         window.location.href = '/login';
         return Promise.reject(refreshError);
       }

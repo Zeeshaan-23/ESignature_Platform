@@ -138,7 +138,7 @@ AUTH_USER_MODEL= 'users.User'
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
-        'rest_framework_simplejwt.authentication.JWTAuthentication',
+        'users.authentication.CookieJWTAuthentication',
     ),
     'DEFAULT_PERMISSION_CLASSES': (
         'rest_framework.permissions.IsAuthenticated',
@@ -155,6 +155,8 @@ SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(hours=1),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
     'ROTATE_REFRESH_TOKENS': True,
+    # Do not require Authorization header — we use cookies
+    'AUTH_HEADER_TYPES': ('Bearer',),
 }
 
 MEDIA_URL = '/media/'
@@ -167,7 +169,21 @@ CORS_ALLOWED_ORIGINS = [
 ]
 CORS_URLS_REGEX = r'^.*$'
 
+# Required for cookies (JWT + CSRF) to be sent cross-origin
 CORS_ALLOW_CREDENTIALS = True
+
+# Allow the browser to read Set-Cookie from cross-origin responses
+CORS_EXPOSE_HEADERS = ['Set-Cookie']
+
+# CSRF cookie must be readable by JS so the SPA can send X-CSRFToken header
+CSRF_COOKIE_HTTPONLY = False
+CSRF_COOKIE_SAMESITE = 'Lax'
+
+# Trust the Vite dev server for CSRF
+CSRF_TRUSTED_ORIGINS = [
+    'http://localhost:5173',
+    'http://localhost:3000',
+]
 
 # Content Security Policy (Django 6 built-in)
 SECURE_CSP = {

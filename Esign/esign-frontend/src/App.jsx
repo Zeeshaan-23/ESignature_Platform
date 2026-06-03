@@ -13,9 +13,9 @@ import SigningPage from './pages/SigningPage';
 import AuditTrailPage from './pages/AuditTrailPage';
 // Protected route — redirects to login if not authenticated
 function ProtectedRoute({ children }) {
-  const { token, loading } = useAuth();
+  const { isAuthenticated, loading } = useAuth();
   if (loading) return <div>Loading...</div>;
-  return token ? children : <Navigate to="/login" />;
+  return isAuthenticated ? children : <Navigate to="/login" />;
 }
 
 export default function App() {
