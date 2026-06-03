@@ -1,158 +1,94 @@
-# eSign Platform
+# eSign Platform - Backend
 
-A secure, enterprise-grade electronic signature platform built with Django and Django REST Framework.
-
-## Overview
-
-eSign Platform allows users to upload documents, create signing packages, send them to recipients, and collect legally-traceable electronic signatures — all through a clean REST API.
+The core API and backend worker service for the eSign Platform. Built with Django and Django REST Framework, it handles document processing, signature stamping, advanced workflows, and webhook deliveries.
 
 ## Tech Stack
+- **Framework**: Django 6.0 + Django REST Framework (DRF)
+- **Database**: PostgreSQL
+- **Task Queue**: Celery + Redis
+- **Authentication**: JWT (JSON Web Tokens)
+- **PDF Processing**: `pypdf`, `reportlab`, `Pillow`
+- **Document Processing**: `python-docx` for automatic DOCX to PDF conversion
+- **Testing**: `pytest` + `pytest-django`
 
-- **Backend:** Django 6.0, Django REST Framework
-- **Auth:** JWT via djangorestframework-simplejwt
-- **Database:** PostgreSQL (SQLite for development)
-- **File Storage:** Local filesystem (S3-compatible in production)
-- **Task Queue:** Celery + Redis (email notifications)
-- **Python:** 3.14
-
-## Architecture
-
-```
-esign-platform/
-├── config/       # Project settings and root URL config
-├── users/        # Custom user model, JWT auth API
-├── documents/    # Document upload, storage, SHA-256 hashing
-├── packages/     # Signing packages, recipients, routing
-├── signing/      # Token-based public signing flow
-├── audit/        # Immutable event audit trail
-└── media/        # Uploaded files (gitignored)
-```
 ## Features
+- **Document Pipeline**:
+  - Secure uploads with size and MIME validation.
+  - Automatic `.docx` to `.pdf` conversion.
+  - SHA-256 hash generation on upload and post-sign tamper verification.
+  - Reusable Document Templates with versioning and locking.
+- **Advanced Workflows**:
+  - Hybrid Routing: Mix serial and parallel signing orders.
+  - Role-based Actions: Signers vs. Approvers (view-only).
+  - Workflow Actions: Delegate, Return for Rework, Decline, and Resend.
+  - Drag and drop coordinate recording (percentage-based) for precise signature placement on PDFs.
+- **Asynchronous Tasks (Celery)**:
+  - Reliable email delivery with exponential backoff for invitations, completion notices, and password resets.
+  - Automatic PDF generation: Stamps signatures on coordinates and appends a "Certificate of Completion" page.
+- **Audit & Compliance**:
+  - Immutable Audit Log tracking over 14 discrete events across packages and users.
+- **Webhooks**:
+  - Outgoing webhooks with HMAC SHA-256 signature payloads.
+  - Delivery retry mechanics (up to 5 attempts with backoff) to external HTTP endpoints.
 
-- Custom user model with email-based authentication and role system
-- Document upload with SHA-256 tamper detection
-- Signing packages with serial and parallel recipient routing
-- Token-based signing flow — no account required for signers
-- Immutable audit trail with IP logging for every state change
-- JWT authentication with access and refresh tokens
-
-## API Endpoints
-
-### Auth
-| Method | Endpoint | Description | Auth |
-|--------|----------|-------------|------|
-| POST | `/api/users/register/` | Register new user | Public |
-| POST | `/api/users/login/` | Login, get JWT tokens | Public |
-| POST | `/api/users/token/refresh/` | Refresh access token | Public |
-| GET | `/api/users/me/` | Get current user profile | Required |
-
-### Documents
-| Method | Endpoint | Description | Auth |
-|--------|----------|-------------|------|
-| POST | `/api/documents/upload/` | Upload PDF or DOCX | Required |
-| GET | `/api/documents/` | List your documents | Required |
-| GET | `/api/documents/<uuid>/` | Get document detail | Required |
-
-### Packages
-| Method | Endpoint | Description | Auth |
-|--------|----------|-------------|------|
-| POST | `/api/packages/create/` | Create signing package | Required |
-| GET | `/api/packages/` | List your packages | Required |
-| GET | `/api/packages/<uuid>/` | Get package detail | Required |
-| POST | `/api/packages/<uuid>/send/` | Send package to recipients | Required |
-
-### Signing (Public)
-| Method | Endpoint | Description | Auth |
-|--------|----------|-------------|------|
-| GET | `/api/signing/<token>/` | Access signing link | Public |
-| POST | `/api/signing/<token>/submit/` | Submit signature | Public |
-
-### Audit
-| Method | Endpoint | Description | Auth |
-|--------|----------|-------------|------|
-| GET | `/api/audit/packages/<uuid>/` | Get package audit trail | Required |
-
-## Local Setup
+## Getting Started
 
 ### Prerequisites
-- Python 3.10+
-- pip
-- Git
+- Python 3.14+
+- PostgreSQL
+- Redis Server (for Celery)
 
-### Steps
+### Installation
+1. Clone the repository and navigate to the backend directory:
+   ```bash
+   cd esign-platform
+   ```
+2. Create and activate a virtual environment:
+   ```bash
+   python -m venv venv
+   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   ```
+3. Install dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
 
-**1. Clone the repository:**
-```bash
-git clone https://github.com/Zeeshaan-23/esign-platform.git
-cd esign-platform
-```
-
-**2. Create and activate virtual environment:**
-```bash
-python -m venv venv
-
-# Windows
-venv\Scripts\activate
-
-# macOS/Linux
-source venv/bin/activate
-```
-
-**3. Install dependencies:**
-```bash
-pip install -r requirements.txt
-```
-
-**4. Create environment file:**
-```bash
-cp .env.example .env
-```
-Edit `.env` with your values.
-
-**5. Run migrations:**
-```bash
-python manage.py migrate
-```
-
-**6. Create superuser:**
-```bash
-python manage.py createsuperuser
-```
-
-**7. Run the development server:**
-```bash
-python manage.py runserver
-```
-
-API is now available at `http://127.0.0.1:8000/`
-
-## Environment Variables
-
-Create a `.env` file in the project root:
-SECRET_KEY=your-secret-key-here
+### Configuration
+Create a `.env` file in the `esign-platform/config` directory (or export variables in your environment):
+```env
 DEBUG=True
-ALLOWED_HOSTS=127.0.0.1,localhost
-DATABASE_URL=sqlite:///db.sqlite3
+SECRET_KEY=your-secret-key
+DATABASE_URL=postgres://user:pass@localhost:5432/esign_db
+REDIS_URL=redis://127.0.0.1:6379/0
 
-## Running the Signing Flow
+# Email Configuration (e.g. Mailtrap for dev)
+EMAIL_HOST=smtp.mailtrap.io
+EMAIL_PORT=2525
+EMAIL_HOST_USER=your_user
+EMAIL_HOST_PASSWORD=your_password
+DEFAULT_FROM_EMAIL=noreply@esign.local
 
-1. Register and login to get a JWT token
-2. Upload a document (`POST /api/documents/upload/`)
-3. Create a package with recipients (`POST /api/packages/create/`)
-4. Send the package (`POST /api/packages/<uuid>/send/`)
-5. Access the signing link (`GET /api/signing/<token>/`)
-6. Submit the signature (`POST /api/signing/<token>/submit/`)
-7. View the audit trail (`GET /api/audit/packages/<uuid>/`)
+# Frontend URL for emails
+FRONTEND_URL=http://localhost:5173
+```
 
-## Git Workflow
+### Running Locally
+1. Run database migrations:
+   ```bash
+   python manage.py migrate
+   ```
+2. Start the Django development server:
+   ```bash
+   python manage.py runserver
+   ```
+3. Start the Celery worker (in a separate terminal):
+   ```bash
+   celery -A config worker -l info
+   ```
 
-This project follows Conventional Commits:
-
-- `feat` — new feature
-- `fix` — bug fix
-- `chore` — setup or tooling changes
-- `refactor` — code restructuring
-
-## License
-
-MIT
+### Testing
+To run the automated test suite (`pytest`):
+```bash
+pytest
+```
+*Note: Make sure your PostgreSQL user has the `CREATEDB` privilege to allow pytest to create a test database.*

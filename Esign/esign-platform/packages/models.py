@@ -15,6 +15,7 @@ class Package(models.Model):
         EXPIRED = 'EXPIRED', 'Expired'
         DECLINED = 'DECLINED', 'Declined'
         CANCELLED = 'CANCELLED', 'Cancelled'
+        RETURNED = 'RETURNED', 'Returned'  # Approver/reviewer returned for rework
 
     class RoutingMode(models.TextChoices):
         SERIAL = 'SERIAL', 'Serial'       # one at a time, in order
@@ -75,13 +76,16 @@ class Recipient(models.Model):
         CC = 'CC', 'CC'               # receives a copy, no action needed
 
     class Status(models.TextChoices):
-        PENDING = 'PENDING', 'Pending'     # not yet sent to them
-        SENT = 'SENT', 'Sent'             # invite email sent
-        VIEWED = 'VIEWED', 'Viewed'       # opened the signing link
-        SIGNED = 'SIGNED', 'Signed'       # completed signing
-        DECLINED = 'DECLINED', 'Declined' # refused to sign
+        PENDING = 'PENDING', 'Pending'       # not yet sent to them
+        SENT = 'SENT', 'Sent'               # invite email sent
+        VIEWED = 'VIEWED', 'Viewed'         # opened the signing link
+        SIGNED = 'SIGNED', 'Signed'         # completed signing
+        APPROVED = 'APPROVED', 'Approved'   # approver approved (no signature needed)
+        RETURNED = 'RETURNED', 'Returned'   # approver returned for rework
+        DELEGATED = 'DELEGATED', 'Delegated' # signer delegated to someone else
+        DECLINED = 'DECLINED', 'Declined'   # refused to sign
         CANCELLED = 'CANCELLED', 'Cancelled'
-        EXPIRED = 'EXPIRED', 'Expired'    # time ran out
+        EXPIRED = 'EXPIRED', 'Expired'      # time ran out
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
@@ -106,14 +110,66 @@ class Recipient(models.Model):
     signing_token = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
 
     signed_at = models.DateTimeField(null=True, blank=True)
-    signature_data = models.TextField(blank=True,null=True,help_text="Base64 encoded signature image")
+    signature_data = models.TextField(blank=True, null=True, help_text="Base64 encoded signature image")
+
+    # Delegation: when this recipient delegates, we track the new recipient
+    delegated_to = models.ForeignKey(
+        'self',
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='delegated_from',
+        help_text="If this recipient delegated their signing, points to the new recipient."
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
-    
 
     class Meta:
         ordering = ['signing_order', 'created_at']
-        # One person can't be added twice to the same package
-        unique_together = [['package', 'email']]
+        # NOTE: unique_together removed to allow delegation (new recipient with same email
+        # in a different slot). Uniqueness for non-delegated recipients is enforced in the view.
 
     def __str__(self):
         return f"{self.name} <{self.email}> - {self.role} ({self.status})"
+
+
+class SignatureField(models.Model):
+    """
+    Represents a signature box placed by the sender on a specific page of the document.
+    Coordinates are stored as percentages (0.0 – 1.0) of page width/height so they
+    remain consistent regardless of screen size, zoom level, or PDF dimensions.
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    package = models.ForeignKey(
+        Package,
+        on_delete=models.CASCADE,
+        related_name='signature_fields'
+    )
+    recipient = models.ForeignKey(
+        Recipient,
+        on_delete=models.CASCADE,
+        related_name='signature_fields'
+    )
+
+    page_number = models.PositiveIntegerField(
+        default=1,
+        help_text="1-indexed page number in the PDF"
+    )
+
+    # All coordinates are percentages of the page dimensions (0.0 – 1.0)
+    x = models.FloatField(help_text="Left edge as fraction of page width")
+    y = models.FloatField(help_text="Top edge as fraction of page height")
+    width = models.FloatField(help_text="Width as fraction of page width", default=0.2)
+    height = models.FloatField(help_text="Height as fraction of page height", default=0.07)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['page_number', 'y', 'x']
+
+    def __str__(self):
+        return (
+            f"Field for {self.recipient.email} on page {self.page_number} "
+            f"of package {self.package.subject}"
+        )

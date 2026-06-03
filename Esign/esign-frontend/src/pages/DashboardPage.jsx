@@ -36,12 +36,14 @@ export default function DashboardPage() {
     fetchStats();
   }, []);
 
+  const [statusFilter, setStatusFilter] = useState('');
+
   useEffect(() => {
     const fetchPackages = async () => {
       try {
         setLoading(true);
 
-        const res = await listPackages(page);
+        const res = await listPackages(page, statusFilter);
 
         setPackages(res.data.results);
         setTotalCount(res.data.count);
@@ -55,21 +57,15 @@ export default function DashboardPage() {
     };
 
     fetchPackages();
-  }, [page]);
+  }, [page, statusFilter]);
 
   const getStatusColor = (status) => {
     switch (status) {
-      case 'DRAFT':
-        return '#f59e0b';
-
-      case 'SENT':
-        return '#2563eb';
-
-      case 'COMPLETED':
-        return '#16a34a';
-
-      default:
-        return '#6b7280';
+      case 'DRAFT': return '#f59e0b';
+      case 'SENT': return '#2563eb';
+      case 'COMPLETED': return '#16a34a';
+      case 'RETURNED': return '#dc2626';
+      default: return '#6b7280';
     }
   };
 
@@ -78,79 +74,61 @@ export default function DashboardPage() {
       <div style={styles.header}>
         <div>
           <h1 style={styles.title}>Dashboard</h1>
-
-          <p style={styles.subtitle}>
-            Welcome back, {user?.email}
-          </p>
+          <p style={styles.subtitle}>Welcome back, {user?.email}</p>
         </div>
 
         <div style={styles.headerActions}>
-          <button
-            onClick={() => navigate('/upload')}
-            style={styles.newBtn}
-          >
-            + New Package
-          </button>
-
-          <button
-            onClick={() => navigate('/webhooks')}
-            style={styles.webhooksBtn}
-          >
-            🔔 Webhooks
-          </button>
-
-          <button
-            onClick={logout}
-            style={styles.logoutBtn}
-          >
-            Logout
-          </button>
+          <button onClick={() => navigate('/upload')} style={styles.newBtn}>+ New Package</button>
+          <button onClick={() => navigate('/templates')} style={{...styles.newBtn, background: '#4f46e5'}}>📑 Templates</button>
+          <button onClick={() => navigate('/webhooks')} style={styles.webhooksBtn}>🔔 Webhooks</button>
+          <button onClick={logout} style={styles.logoutBtn}>Logout</button>
         </div>
       </div>
 
       <div style={styles.statsGrid}>
         <div style={styles.statCard}>
           <h3 style={styles.statTitle}>Total Packages</h3>
-          <p style={styles.statValue}>{statsLoading ? '...' : stats.total}</p>
+          {statsLoading ? <div style={styles.skeletonText}></div> : <p style={styles.statValue}>{stats.total}</p>}
         </div>
         <div style={styles.statCard}>
           <h3 style={styles.statTitle}>Completed</h3>
-          <p style={{...styles.statValue, color: '#16a34a'}}>{statsLoading ? '...' : stats.completed}</p>
+          {statsLoading ? <div style={styles.skeletonText}></div> : <p style={{...styles.statValue, color: '#16a34a'}}>{stats.completed}</p>}
         </div>
         <div style={styles.statCard}>
           <h3 style={styles.statTitle}>Pending Signatures</h3>
-          <p style={{...styles.statValue, color: '#f59e0b'}}>{statsLoading ? '...' : stats.pending}</p>
+          {statsLoading ? <div style={styles.skeletonText}></div> : <p style={{...styles.statValue, color: '#f59e0b'}}>{stats.pending}</p>}
         </div>
       </div>
 
-      {!statsLoading && stats.chart_data.length > 0 && (
-        <div style={styles.chartContainer}>
-          <h3 style={styles.chartTitle}>Packages Created (Monthly)</h3>
-          <div style={{ width: '100%', height: 200 }}>
-            <ResponsiveContainer>
-              <BarChart data={stats.chart_data}>
-                <XAxis dataKey="month" tick={{fontSize: 12}} />
-                <YAxis allowDecimals={false} tick={{fontSize: 12}} />
-                <Tooltip />
-                <Bar dataKey="count" fill="#2563eb" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-      )}
+      <div style={styles.filterBar}>
+        <h2 style={styles.sectionTitle}>Recent Packages</h2>
+        <select 
+          value={statusFilter} 
+          onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
+          style={styles.filterSelect}
+        >
+          <option value="">All Statuses</option>
+          <option value="DRAFT">Drafts</option>
+          <option value="SENT">Sent</option>
+          <option value="COMPLETED">Completed</option>
+          <option value="RETURNED">Returned</option>
+        </select>
+      </div>
 
       {loading ? (
-        <div style={styles.emptyState}>
-          <div style={styles.spinner}></div>
-          <p>Loading packages...</p>
+        <div style={styles.packageGrid}>
+          {[1, 2, 3].map(i => (
+            <div key={i} style={{...styles.packageCard, ...styles.skeletonCard}}>
+              <div style={styles.skeletonHeader}></div>
+              <div style={styles.skeletonLine}></div>
+              <div style={styles.skeletonLine}></div>
+            </div>
+          ))}
         </div>
       ) : packages.length === 0 ? (
         <div style={styles.emptyState}>
-          <h3>No packages yet</h3>
-
-          <p>
-            Create your first signing package to get started.
-          </p>
+          <h3>No packages found</h3>
+          <p>{statusFilter ? `No packages match the status '${statusFilter}'.` : 'Create your first signing package to get started.'}</p>
         </div>
       ) : (
         <div style={styles.packageGrid}>
@@ -386,15 +364,62 @@ const styles = {
     animation: 'spin 1s linear infinite',
     margin: '0 auto 1rem',
   },
+  filterBar: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '1rem',
+  },
+  sectionTitle: {
+    fontSize: '1.2rem',
+    color: '#374151',
+    margin: 0,
+  },
+  filterSelect: {
+    padding: '0.5rem',
+    borderRadius: '4px',
+    border: '1px solid #d1d5db',
+    fontSize: '0.9rem',
+    background: 'white',
+  },
+  skeletonText: {
+    height: '2rem',
+    width: '40%',
+    margin: '0 auto',
+    background: '#e5e7eb',
+    borderRadius: '4px',
+    animation: 'pulse 1.5s infinite ease-in-out',
+  },
+  skeletonCard: {
+    animation: 'pulse 1.5s infinite ease-in-out',
+  },
+  skeletonHeader: {
+    height: '1.5rem',
+    width: '60%',
+    background: '#e5e7eb',
+    borderRadius: '4px',
+    marginBottom: '1rem',
+  },
+  skeletonLine: {
+    height: '1rem',
+    width: '80%',
+    background: '#e5e7eb',
+    borderRadius: '4px',
+    marginBottom: '0.5rem',
+  },
 };
 
-// Add keyframes for spinner globally since React doesn't support inline keyframes well
+// Add keyframes for spinner and pulse globally since React doesn't support inline keyframes well
 const styleSheet = document.createElement("style")
 styleSheet.type = "text/css"
 styleSheet.innerText = `
 @keyframes spin {
   0% { transform: rotate(0deg); }
   100% { transform: rotate(360deg); }
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
 }
 `
 document.head.appendChild(styleSheet);

@@ -17,6 +17,7 @@ import AuditTrailPage from './pages/AuditTrailPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
 import WebhooksPage from './pages/WebhooksPage';
+import TemplatesPage from './pages/TemplatesPage';
 // Protected route — redirects to login if not authenticated
 function ProtectedRoute({ children }) {
   const { isAuthenticated, loading } = useAuth();
@@ -35,6 +36,7 @@ export default function App() {
           <Route path="/reset-password" element={<ResetPasswordPage />} />
           <Route path="/" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
           <Route path="/upload" element={<ProtectedRoute><UploadPage /></ProtectedRoute>} />
+          <Route path="/templates" element={<ProtectedRoute><TemplatesPage /></ProtectedRoute>} />
           <Route path="/packages/new" element={<ProtectedRoute><CreatePackagePage /></ProtectedRoute>} />
           <Route path="/packages/:id" element={<ProtectedRoute><PackageDetailPage /></ProtectedRoute>} />
           <Route path="/sign/:token" element={<SigningPage />} />

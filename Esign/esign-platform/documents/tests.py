@@ -60,9 +60,16 @@ class TestDocumentUpload:
                 format='multipart'
             )
             assert res.status_code == 400
-            assert 'Maximum size is 1MB' in str(res.data)
+            assert 'Maximum size is 1 MB' in str(res.data)
 
-    def test_upload_docx_rejected(self, auth_client):
+    from unittest.mock import patch
+
+    @patch('documents.pdf_utils.convert_docx_to_pdf')
+    def test_upload_docx_success(self, mock_convert, auth_client):
+        # Phase 7.31: DOCX files are now accepted and auto-converted to PDF
+        import io
+        mock_convert.return_value = io.BytesIO(b'%PDF-1.4 mock pdf bytes')
+        
         docx_file = SimpleUploadedFile(
             'test.docx',
             b'PK fake docx content',
@@ -74,7 +81,9 @@ class TestDocumentUpload:
             {'file': docx_file},
             format='multipart'
         )
-        assert res.status_code == 400
+        assert res.status_code == 201
+        assert res.data['original_filename'] == 'test.docx'
+        assert res.data['file'].endswith('.pdf')
 
     def test_upload_unauthenticated(self, api_client):
         res = api_client.post(

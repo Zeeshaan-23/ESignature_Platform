@@ -1,14 +1,17 @@
-// src/pages/CreatePackagePage.jsx
-
 import { useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { createPackage, sendPackage } from '../api/packages';
+import PlaceFieldsUI from '../components/PlaceFieldsUI';
 
 export default function CreatePackagePage() {
   const [searchParams] = useSearchParams();
   const documentId = searchParams.get('documentId');
   const documentName = searchParams.get('documentName');
+  const documentUrl = searchParams.get('documentUrl'); // Need this to pass to PlaceFieldsUI
+
+  const [step, setStep] = useState(1);
+  const [createdPackageId, setCreatedPackageId] = useState(null);
 
   const [subject, setSubject] = useState('');
   const [message, setMessage] = useState('');
@@ -53,11 +56,21 @@ export default function CreatePackagePage() {
       });
 
       const packageId = res.data.id;
-
-      // Send immediately after creating
-      await sendPackage(packageId);
-      toast.success('Package created and sent successfully!');
-      navigate(`/packages/${packageId}`);
+      
+      const hasSigners = res.data.recipients.some(r => r.role === 'SIGNER');
+      
+      if (hasSigners) {
+        // Move to field placement step
+        // We use the recipients from backend response as they have proper IDs
+        setRecipients(res.data.recipients);
+        setCreatedPackageId(packageId);
+        setStep(2);
+      } else {
+        // No signers? Just send immediately (e.g. only Approvers or CCs)
+        await sendPackage(packageId);
+        toast.success('Package created and sent successfully!');
+        navigate(`/packages/${packageId}`);
+      }
     } catch (err) {
       const data = err.response?.data;
       const errorMsg = typeof data === 'object'
@@ -75,6 +88,23 @@ export default function CreatePackagePage() {
       <div style={{ padding: '2rem', textAlign: 'center' }}>
         <p>No document selected.</p>
         <button onClick={() => navigate('/upload')}>Upload a Document</button>
+      </div>
+    );
+  }
+
+  if (step === 2) {
+    return (
+      <div style={styles.container}>
+        <div style={styles.header}>
+          <h2>Step 2: Place Signature Fields</h2>
+          <button style={styles.cancelBtn} onClick={() => navigate(`/packages/${createdPackageId}`)}>Save as Draft</button>
+        </div>
+        <PlaceFieldsUI 
+          packageId={createdPackageId}
+          documentUrl={documentUrl}
+          recipients={recipients}
+          onComplete={() => navigate(`/packages/${createdPackageId}`)}
+        />
       </div>
     );
   }
@@ -185,7 +215,7 @@ export default function CreatePackagePage() {
               disabled={loading}
               style={styles.submitBtn}
             >
-              {loading ? 'Sending...' : 'Create & Send Package'}
+              {loading ? 'Processing...' : 'Next: Place Fields'}
             </button>
           </div>
         </form>

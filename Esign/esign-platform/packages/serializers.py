@@ -1,7 +1,27 @@
 # packages/serializers.py
 
 from rest_framework import serializers
-from .models import Package, Recipient
+from .models import Package, Recipient, SignatureField
+
+
+class SignatureFieldSerializer(serializers.ModelSerializer):
+    """
+    Serializer for creating and reading signature field placements.
+    Coordinates are stored as percentages (0.0 – 1.0) of page dimensions.
+    """
+    class Meta:
+        model = SignatureField
+        fields = ['id', 'recipient', 'page_number', 'x', 'y', 'width', 'height', 'created_at']
+        read_only_fields = ['id', 'created_at']
+
+    def validate(self, data):
+        for coord in ('x', 'y', 'width', 'height'):
+            val = data.get(coord)
+            if val is not None and not (0.0 <= val <= 1.0):
+                raise serializers.ValidationError(
+                    {coord: f"'{coord}' must be a percentage between 0.0 and 1.0."}
+                )
+        return data
 
 
 class RecipientSerializer(serializers.ModelSerializer):

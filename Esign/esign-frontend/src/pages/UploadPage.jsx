@@ -27,7 +27,8 @@ export default function UploadPage() {
       });
       toast.success('Document uploaded successfully!');
       // After upload, go straight to create package with document ID
-      navigate(`/packages/new?documentId=${res.data.id}&documentName=${encodeURIComponent(res.data.original_filename)}`);
+      const docUrl = encodeURIComponent(res.data.file);
+      navigate(`/packages/new?documentId=${res.data.id}&documentName=${encodeURIComponent(res.data.original_filename)}&documentUrl=${docUrl}`);
     } catch (err) {
       const msg = 'Upload failed. Make sure the file is a PDF or DOCX under 10MB.';
       setError(msg);

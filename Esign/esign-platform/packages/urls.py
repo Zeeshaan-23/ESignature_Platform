@@ -8,6 +8,10 @@ urlpatterns = [
     path('stats/', views.DashboardStatsView.as_view(), name='package-stats'),
     path('create/', views.PackageCreateView.as_view(), name='package-create'),
     path('<uuid:pk>/send/', views.SendPackageView.as_view(), name='package-send'),
+    path('<uuid:pk>/resend/', views.ResendPackageView.as_view(), name='package-resend'),
     path('<uuid:pk>/', views.PackageDetailView.as_view(), name='package-detail'),
     path('<uuid:pk>/cancel/', views.PackageCancelView.as_view(), name='package-cancel'),
-]
+    # Feature 38: Signature field placement
+    path('<uuid:pk>/fields/', views.SignatureFieldListCreateView.as_view(), name='package-fields'),
+    path('<uuid:pk>/fields/<uuid:field_id>/', views.SignatureFieldDeleteView.as_view(), name='package-field-delete'),
+]

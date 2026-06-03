@@ -111,19 +111,102 @@ def generate_signature_certificate(package, recipients_data):
     return buffer
 
 
-def merge_pdf_with_certificate(original_file, certificate_buffer):
+def stamp_signatures_on_pdf(original_file, signature_fields_by_page):
     """
-    Appends the certificate page to the original PDF.
+    Overlays recipient signatures onto the original PDF at the exact positions
+    defined by SignatureField records.
+
+    signature_fields_by_page: dict of { page_number (1-indexed): [field_dict, ...] }
+    Each field_dict must have:
+        x, y, width, height  — percentages (0.0–1.0) of page dimensions
+        signature_data        — base64-encoded PNG from the recipient
+
+    PDF coordinate origin is bottom-left, but our stored (x, y) uses top-left origin
+    (as the browser does). We convert y here: pdf_y = page_height - (y + height) * page_height
+    """
+    reader = PdfReader(original_file)
+    writer = PdfWriter()
+
+    for page_idx, page in enumerate(reader.pages):
+        page_number = page_idx + 1  # 1-indexed
+
+        fields = signature_fields_by_page.get(page_number, [])
+        if not fields:
+            writer.add_page(page)
+            continue
+
+        # Get actual page dimensions from the PDF
+        media_box = page.mediabox
+        page_width = float(media_box.width)
+        page_height = float(media_box.height)
+
+        # Build an overlay canvas at the same dimensions as this page
+        overlay_buffer = io.BytesIO()
+        c = canvas.Canvas(overlay_buffer, pagesize=(page_width, page_height))
+
+        for field in fields:
+            sig_data = field.get('signature_data')
+            if not sig_data:
+                continue
+
+            try:
+                # Decode signature image
+                raw = sig_data.split(',')[1] if ',' in sig_data else sig_data
+                img_bytes = base64.b64decode(raw)
+                img = Image.open(io.BytesIO(img_bytes)).convert('RGBA')
+
+                img_buffer = io.BytesIO()
+                img.save(img_buffer, format='PNG')
+                img_buffer.seek(0)
+
+                # Convert percentage coords → absolute PDF coords
+                abs_x = field['x'] * page_width
+                abs_w = field['width'] * page_width
+                abs_h = field['height'] * page_height
+
+                # Convert top-left y origin → bottom-left PDF origin
+                abs_y = page_height - (field['y'] + field['height']) * page_height
+
+                c.drawImage(
+                    img_buffer,
+                    abs_x, abs_y,
+                    width=abs_w,
+                    height=abs_h,
+                    preserveAspectRatio=True,
+                    mask='auto'
+                )
+            except Exception:
+                pass  # Skip fields that can't be rendered; don't fail the whole PDF
+
+        c.save()
+        overlay_buffer.seek(0)
+
+        # Merge overlay onto the original page
+        overlay_reader = PdfReader(overlay_buffer)
+        overlay_page = overlay_reader.pages[0]
+        page.merge_page(overlay_page)
+        writer.add_page(page)
+
+    output = io.BytesIO()
+    writer.write(output)
+    output.seek(0)
+    return output
+
+
+def merge_pdf_with_certificate(stamped_pdf, certificate_buffer):
+    """
+    Appends the certificate page to the (already-stamped) PDF.
     Returns bytes of the merged PDF.
+    stamped_pdf can be a file object or BytesIO.
     """
     writer = PdfWriter()
 
-    # Add all original pages
-    reader = PdfReader(original_file)
+    # Add all original/stamped pages
+    reader = PdfReader(stamped_pdf)
     for page in reader.pages:
         writer.add_page(page)
 
-    # Add certificate page
+    # Add certificate page(s)
     cert_reader = PdfReader(certificate_buffer)
     for page in cert_reader.pages:
         writer.add_page(page)
@@ -132,3 +215,69 @@ def merge_pdf_with_certificate(original_file, certificate_buffer):
     writer.write(output)
     output.seek(0)
     return output
+
+
+def convert_docx_to_pdf(docx_file_obj):
+    """
+    Phase 7.31 — DOCX → PDF auto-conversion.
+    Converts a DOCX file to PDF using python-docx + reportlab.
+    Pure-Python; no LibreOffice required.
+    Returns: BytesIO containing the PDF bytes.
+    """
+    from docx import Document as DocxDocument
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+
+    docx = DocxDocument(docx_file_obj)
+    output = io.BytesIO()
+    doc = SimpleDocTemplate(output, pagesize=A4)
+    styles = getSampleStyleSheet()
+
+    heading1_style = ParagraphStyle(
+        'H1Custom', parent=styles['Heading1'], fontSize=18, spaceAfter=12,
+    )
+    heading2_style = ParagraphStyle(
+        'H2Custom', parent=styles['Heading2'], fontSize=14, spaceAfter=8,
+    )
+    body_style = ParagraphStyle(
+        'BodyCustom', parent=styles['Normal'], fontSize=11, spaceAfter=6, leading=14,
+    )
+
+    story = []
+    for para in docx.paragraphs:
+        text = para.text.strip()
+        if not text:
+            story.append(Spacer(1, 6))
+            continue
+        style_name = para.style.name if para.style else ''
+        if 'Heading 1' in style_name:
+            style = heading1_style
+        elif 'Heading 2' in style_name:
+            style = heading2_style
+        else:
+            style = body_style
+        safe_text = text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+        story.append(Paragraph(safe_text, style))
+
+    if not story:
+        story.append(Paragraph("(Empty document)", body_style))
+
+    doc.build(story)
+    output.seek(0)
+    return output
+
+
+def verify_file_hash(file_obj, expected_hash):
+    """
+    Phase 7.32 — Post-sign hash re-verification (tamper check).
+    Computes the SHA-256 of a file and compares it to the stored hash.
+    Returns: (bool match, str computed_hash)
+    """
+    import hashlib
+    sha256 = hashlib.sha256()
+    file_obj.seek(0)
+    for chunk in iter(lambda: file_obj.read(8192), b''):
+        sha256.update(chunk)
+    computed = sha256.hexdigest()
+    return (computed == expected_hash), computed
+

@@ -4,7 +4,11 @@ from celery import shared_task, chain
 from django.core.mail import EmailMessage, send_mail
 from django.conf import settings
 from django.core.files.base import ContentFile
-from documents.pdf_utils import generate_signature_certificate, merge_pdf_with_certificate
+from documents.pdf_utils import (
+    generate_signature_certificate,
+    merge_pdf_with_certificate,
+    stamp_signatures_on_pdf,
+)
 from audit.models import AuditEvent
 
 
@@ -112,7 +116,7 @@ eSign Platform"""
     retry_jitter=True,
 )
 def generate_signed_pdf(package_id):
-    from packages.models import Package
+    from packages.models import Package, SignatureField
 
     try:
         package = Package.objects.select_related(
@@ -121,18 +125,18 @@ def generate_signed_pdf(package_id):
     except Package.DoesNotExist:
         return
 
-    # Gather all signed recipients with their audit data
-    recipients_data = []
-    for r in package.recipients.filter(
-        role='SIGNER',
-        status='SIGNED'
-    ).order_by('signing_order'):
+    # Gather all signed/approved recipients with their audit data
+    signed_recipients = package.recipients.filter(
+        role__in=['SIGNER', 'APPROVER'],
+        status__in=['SIGNED', 'APPROVED']
+    ).order_by('signing_order')
 
-        # Get IP from audit log
+    recipients_data = []
+    for r in signed_recipients:
         audit = AuditEvent.objects.filter(
             package=package,
             recipient=r,
-            event_type='signing.signed'
+            event_type__in=['signing.signed', 'signing.approved']
         ).first()
 
         recipients_data.append({
@@ -143,14 +147,47 @@ def generate_signed_pdf(package_id):
             'signature_data': r.signature_data,
         })
 
-    # Generate certificate page
-    certificate_buffer = generate_signature_certificate(package, recipients_data)
+    # Build signature_fields_by_page:
+    # { page_number: [ {x, y, width, height, signature_data}, ... ] }
+    # A recipient signs once; that signature is applied to ALL their fields.
+    signature_fields_by_page = {}
+    fields_qs = SignatureField.objects.filter(
+        package=package
+    ).select_related('recipient').order_by('page_number', 'y', 'x')
 
-    # Merge with original document
+    for field in fields_qs:
+        recipient = field.recipient
+        # Only stamp if the recipient has actually signed
+        if recipient.status not in ('SIGNED',) or not recipient.signature_data:
+            continue
+        page = field.page_number
+        if page not in signature_fields_by_page:
+            signature_fields_by_page[page] = []
+        signature_fields_by_page[page].append({
+            'x': field.x,
+            'y': field.y,
+            'width': field.width,
+            'height': field.height,
+            'signature_data': recipient.signature_data,
+        })
+
     original_file = package.document.file
-    merged_pdf = merge_pdf_with_certificate(original_file, certificate_buffer)
 
-    # Save signed file to package
+    # Stamp signatures onto PDF pages (no-op if no fields defined)
+    if signature_fields_by_page:
+        stamped_pdf = stamp_signatures_on_pdf(original_file, signature_fields_by_page)
+    else:
+        # No fields placed — use original file directly
+        import io as _io
+        original_file.open('rb')
+        stamped_pdf = _io.BytesIO(original_file.read())
+        original_file.close()
+        stamped_pdf.seek(0)
+
+    # Generate certificate and merge
+    certificate_buffer = generate_signature_certificate(package, recipients_data)
+    merged_pdf = merge_pdf_with_certificate(stamped_pdf, certificate_buffer)
+
     filename = f"signed_{package.document.original_filename}"
     package.signed_file.save(
         filename,

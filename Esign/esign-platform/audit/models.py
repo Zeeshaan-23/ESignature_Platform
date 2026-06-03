@@ -19,6 +19,14 @@ class AuditEvent(models.Model):
         PACKAGE_CANCELLED   = 'package.cancelled',   'Package Cancelled'
         REMINDER_SENT       = 'reminder.sent',       'Reminder Sent'
         LINK_RESENT         = 'link.resent',         'Link Resent'
+        # Phase 6 additions
+        SIGNING_APPROVED    = 'signing.approved',    'Document Approved'
+        SIGNING_RETURNED    = 'signing.returned',    'Document Returned for Rework'
+        RECIPIENT_DELEGATED = 'recipient.delegated', 'Signing Delegated'
+        PACKAGE_RETURNED    = 'package.returned',    'Package Returned'
+        PACKAGE_RESENT      = 'package.resent',      'Package Resent'
+        # Phase 7 additions
+        DOCUMENT_VERIFIED   = 'document.verified',   'Document Hash Verified'
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 

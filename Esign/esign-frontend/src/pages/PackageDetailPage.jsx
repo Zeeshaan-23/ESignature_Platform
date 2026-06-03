@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'react-toastify';
-import { getPackage, cancelPackage } from '../api/packages';
+import { getPackage, cancelPackage, resendPackage } from '../api/packages';
 
 export default function PackageDetailPage() {
   const { id } = useParams();
@@ -70,7 +70,23 @@ export default function PackageDetailPage() {
             >
               View Audit Trail
             </button>
-            {['SENT', 'IN_PROGRESS', 'DRAFT'].includes(pkg.status) && (
+            {pkg.status === 'RETURNED' && (
+              <button
+                onClick={async () => {
+                  try {
+                    await resendPackage(id);
+                    toast.success('Package resent successfully!');
+                    setPkg({ ...pkg, status: 'IN_PROGRESS' }); // Optimistic update
+                  } catch {
+                    toast.error('Failed to resend package.');
+                  }
+                }}
+                style={styles.resendBtn}
+              >
+                Resend Package
+              </button>
+            )}
+            {['SENT', 'IN_PROGRESS', 'DRAFT', 'RETURNED'].includes(pkg.status) && (
               <button
                 onClick={async () => {
                   if (!window.confirm('Cancel this package? This cannot be undone.')) return;
@@ -257,6 +273,15 @@ const styles = {
     background: 'transparent',
     border: '1px solid #2563eb',
     color: '#2563eb',
+    borderRadius: '4px',
+    cursor: 'pointer',
+    fontSize: '0.9rem',
+  },
+  resendBtn: {
+    padding: '0.5rem 1rem',
+    background: '#2563eb',
+    border: '1px solid #2563eb',
+    color: 'white',
     borderRadius: '4px',
     cursor: 'pointer',
     fontSize: '0.9rem',

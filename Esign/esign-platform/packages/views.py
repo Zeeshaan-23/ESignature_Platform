@@ -6,8 +6,11 @@ from django.shortcuts import render
 from rest_framework import generics, status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from .models import Package
-from .serializers import PackageSerializer, PackageListSerializer, PackageDetailSerializer
+from .models import Package, SignatureField
+from .serializers import (
+    PackageSerializer, PackageListSerializer, PackageDetailSerializer,
+    SignatureFieldSerializer,
+)
 
 from rest_framework.views import APIView
 from django.utils import timezone
@@ -235,3 +238,168 @@ class DashboardStatsView(APIView):
             "drafts": drafts,
             "chart_data": chart_data
         })
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Feature 38 – Signature Field Placement (DRAFT packages only)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class SignatureFieldListCreateView(APIView):
+    """
+    GET  /packages/<pk>/fields/  — list all signature fields for a package.
+    POST /packages/<pk>/fields/  — create a new signature field.
+    Only allowed while the package is in DRAFT status.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def _get_package(self, pk, user):
+        try:
+            return Package.objects.get(pk=pk, sender=user)
+        except Package.DoesNotExist:
+            return None
+
+    def get(self, request, pk):
+        package = self._get_package(pk, request.user)
+        if not package:
+            return Response({"error": "Package not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        fields = SignatureField.objects.filter(package=package).select_related('recipient')
+        serializer = SignatureFieldSerializer(fields, many=True)
+        return Response(serializer.data)
+
+    def post(self, request, pk):
+        package = self._get_package(pk, request.user)
+        if not package:
+            return Response({"error": "Package not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        if package.status != Package.Status.DRAFT:
+            return Response(
+                {"error": "Signature fields can only be placed while the package is in DRAFT status."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        serializer = SignatureFieldSerializer(data=request.data)
+        if serializer.is_valid():
+            recipient = serializer.validated_data['recipient']
+            # Ensure the recipient belongs to this package
+            if recipient.package_id != package.pk:
+                return Response(
+                    {"error": "Recipient does not belong to this package."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            serializer.save(package=package)
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class SignatureFieldDeleteView(APIView):
+    """
+    DELETE /packages/<pk>/fields/<field_id>/  — remove a signature field.
+    Only allowed while the package is in DRAFT status.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def delete(self, request, pk, field_id):
+        try:
+            package = Package.objects.get(pk=pk, sender=request.user)
+        except Package.DoesNotExist:
+            return Response({"error": "Package not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        if package.status != Package.Status.DRAFT:
+            return Response(
+                {"error": "Cannot modify fields after the package has been sent."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            field = SignatureField.objects.get(pk=field_id, package=package)
+        except SignatureField.DoesNotExist:
+            return Response({"error": "Signature field not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        field.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 6 – Resend a RETURNED package
+# ─────────────────────────────────────────────────────────────────────────────
+
+class ResendPackageView(APIView):
+    """
+    POST /packages/<pk>/resend/
+    Sender can resend a RETURNED package, which kicks off the signing workflow again
+    from the first pending recipient.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk):
+        try:
+            package = Package.objects.get(pk=pk, sender=request.user)
+        except Package.DoesNotExist:
+            return Response({"error": "Package not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        if package.status != Package.Status.RETURNED:
+            return Response(
+                {"error": f"Only RETURNED packages can be resent. Current status: '{package.status}'."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Reset all non-terminal recipients back to PENDING so signing starts fresh
+        package.recipients.filter(
+            status__in=[
+                Recipient.Status.RETURNED,
+                Recipient.Status.PENDING,
+                Recipient.Status.SENT,
+                Recipient.Status.VIEWED,
+            ]
+        ).update(status=Recipient.Status.PENDING)
+
+        package.status = Package.Status.SENT
+        package.save()
+
+        log_event(
+            event_type=AuditEvent.EventType.PACKAGE_RESENT,
+            package=package,
+            actor=request.user,
+            ip_address=request.META.get('REMOTE_ADDR'),
+            metadata={"resent_by": request.user.email}
+        )
+
+        # Notify first signer(s) in the routing order
+        from notifications.tasks import send_signing_invitation
+        if package.routing_mode == Package.RoutingMode.PARALLEL:
+            recipients_to_notify = list(package.recipients.filter(
+                role=Recipient.Role.SIGNER,
+                status=Recipient.Status.PENDING
+            ))
+        else:
+            first_order = package.recipients.filter(
+                role__in=[Recipient.Role.SIGNER, Recipient.Role.APPROVER],
+                status=Recipient.Status.PENDING
+            ).order_by('signing_order').values_list('signing_order', flat=True).first()
+
+            if first_order is not None:
+                recipients_to_notify = list(package.recipients.filter(
+                    role__in=[Recipient.Role.SIGNER, Recipient.Role.APPROVER],
+                    status=Recipient.Status.PENDING,
+                    signing_order=first_order
+                ))
+            else:
+                recipients_to_notify = []
+
+        for r in recipients_to_notify:
+            r.status = Recipient.Status.SENT
+            r.save()
+            send_signing_invitation.delay(
+                recipient_name=r.name,
+                recipient_email=r.email,
+                sender_name=package.sender.get_full_name() or package.sender.email,
+                package_subject=package.subject,
+                signing_token=str(r.signing_token)
+            )
+
+        return Response(
+            {"message": "Package resent successfully.", "status": package.status},
+            status=status.HTTP_200_OK
+        )
