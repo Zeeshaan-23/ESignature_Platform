@@ -1,0 +1,17 @@
+// src/api/auth.js
+
+import api from './axios';
+
+export const loginUser = (email, password) =>
+  api.post('/users/login/', { email, password });
+
+export const registerUser = (email, firstName, lastName, password) =>
+  api.post('/users/register/', {
+    email,
+    first_name: firstName,
+    last_name: lastName,
+    password,
+    role: 'SENDER',
+  });
+
+export const getMe = () => api.get('/users/me/');
