@@ -200,3 +200,38 @@ class PackageCancelView(APIView):
             {"message": "Package cancelled successfully.", "status": package.status},
             status=status.HTTP_200_OK
         )
+
+class DashboardStatsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        packages = Package.objects.filter(sender=request.user)
+        total = packages.count()
+        completed = packages.filter(status=Package.Status.COMPLETED).count()
+        pending = packages.filter(
+            status__in=[Package.Status.SENT, Package.Status.IN_PROGRESS]
+        ).count()
+        drafts = packages.filter(status=Package.Status.DRAFT).count()
+        
+        # Monthly breakdown for charts
+        from django.db.models import Count
+        from django.db.models.functions import TruncMonth
+        
+        monthly_stats = packages.annotate(
+            month=TruncMonth('created_at')
+        ).values('month').annotate(
+            count=Count('id')
+        ).order_by('month')
+        
+        chart_data = [
+            {"month": entry['month'].strftime("%Y-%m"), "count": entry['count']}
+            for entry in monthly_stats if entry['month']
+        ]
+
+        return Response({
+            "total": total,
+            "completed": completed,
+            "pending": pending,
+            "drafts": drafts,
+            "chart_data": chart_data
+        })

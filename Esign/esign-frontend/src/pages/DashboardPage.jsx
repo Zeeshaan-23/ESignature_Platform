@@ -2,8 +2,9 @@
 
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 
-import { listPackages } from '../api/packages';
+import { listPackages, getDashboardStats } from '../api/packages';
 import { useAuth } from '../context/AuthContext';
 
 export default function DashboardPage() {
@@ -17,7 +18,22 @@ export default function DashboardPage() {
 
   const navigate = useNavigate();
 
-  const { user, logout } = useAuth();
+  const [stats, setStats] = useState({ total: 0, completed: 0, pending: 0, drafts: 0, chart_data: [] });
+  const [statsLoading, setStatsLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchStats = async () => {
+      try {
+        const res = await getDashboardStats();
+        setStats(res.data);
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setStatsLoading(false);
+      }
+    };
+    fetchStats();
+  }, []);
 
   useEffect(() => {
     const fetchPackages = async () => {
@@ -91,8 +107,40 @@ export default function DashboardPage() {
         </div>
       </div>
 
+      <div style={styles.statsGrid}>
+        <div style={styles.statCard}>
+          <h3 style={styles.statTitle}>Total Packages</h3>
+          <p style={styles.statValue}>{statsLoading ? '...' : stats.total}</p>
+        </div>
+        <div style={styles.statCard}>
+          <h3 style={styles.statTitle}>Completed</h3>
+          <p style={{...styles.statValue, color: '#16a34a'}}>{statsLoading ? '...' : stats.completed}</p>
+        </div>
+        <div style={styles.statCard}>
+          <h3 style={styles.statTitle}>Pending Signatures</h3>
+          <p style={{...styles.statValue, color: '#f59e0b'}}>{statsLoading ? '...' : stats.pending}</p>
+        </div>
+      </div>
+
+      {!statsLoading && stats.chart_data.length > 0 && (
+        <div style={styles.chartContainer}>
+          <h3 style={styles.chartTitle}>Packages Created (Monthly)</h3>
+          <div style={{ width: '100%', height: 200 }}>
+            <ResponsiveContainer>
+              <BarChart data={stats.chart_data}>
+                <XAxis dataKey="month" tick={{fontSize: 12}} />
+                <YAxis allowDecimals={false} tick={{fontSize: 12}} />
+                <Tooltip />
+                <Bar dataKey="count" fill="#2563eb" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
+
       {loading ? (
         <div style={styles.emptyState}>
+          <div style={styles.spinner}></div>
           <p>Loading packages...</p>
         </div>
       ) : packages.length === 0 ? (
@@ -292,4 +340,60 @@ const styles = {
     cursor: 'pointer',
     fontSize: '0.85rem',
   },
+  statsGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+    gap: '1rem',
+    marginBottom: '2rem',
+  },
+  statCard: {
+    background: 'white',
+    padding: '1.5rem',
+    borderRadius: '8px',
+    boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+    textAlign: 'center',
+  },
+  statTitle: {
+    fontSize: '0.9rem',
+    color: '#666',
+    margin: '0 0 0.5rem',
+  },
+  statValue: {
+    fontSize: '2rem',
+    fontWeight: '700',
+    margin: 0,
+    color: '#1f2937',
+  },
+  chartContainer: {
+    background: 'white',
+    padding: '1.5rem',
+    borderRadius: '8px',
+    boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+    marginBottom: '2rem',
+  },
+  chartTitle: {
+    fontSize: '1rem',
+    marginBottom: '1rem',
+    color: '#374151',
+  },
+  spinner: {
+    width: '40px',
+    height: '40px',
+    border: '3px solid #f3f3f3',
+    borderTop: '3px solid #2563eb',
+    borderRadius: '50%',
+    animation: 'spin 1s linear infinite',
+    margin: '0 auto 1rem',
+  },
 };
+
+// Add keyframes for spinner globally since React doesn't support inline keyframes well
+const styleSheet = document.createElement("style")
+styleSheet.type = "text/css"
+styleSheet.innerText = `
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+`
+document.head.appendChild(styleSheet);

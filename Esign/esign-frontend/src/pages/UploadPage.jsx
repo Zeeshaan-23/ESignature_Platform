@@ -8,6 +8,7 @@ import { uploadDocument } from '../api/documents';
 export default function UploadPage() {
   const [file, setFile] = useState(null);
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const [error, setError] = useState('');
   const navigate = useNavigate();
 
@@ -16,10 +17,14 @@ export default function UploadPage() {
     if (!file) return;
 
     setUploading(true);
+    setUploadProgress(0);
     setError('');
 
     try {
-      const res = await uploadDocument(file);
+      const res = await uploadDocument(file, (progressEvent) => {
+        const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+        setUploadProgress(percentCompleted);
+      });
       toast.success('Document uploaded successfully!');
       // After upload, go straight to create package with document ID
       navigate(`/packages/new?documentId=${res.data.id}&documentName=${encodeURIComponent(res.data.original_filename)}`);
@@ -54,6 +59,13 @@ export default function UploadPage() {
               <p style={styles.dropText}>Click to select a PDF or DOCX file</p>
             )}
           </div>
+
+          {uploading && (
+            <div style={styles.progressContainer}>
+              <div style={{ ...styles.progressBar, width: `${uploadProgress}%` }}></div>
+              <p style={styles.progressText}>{uploadProgress}% Uploaded</p>
+            </div>
+          )}
 
           <div style={styles.actions}>
             <button
@@ -126,4 +138,27 @@ const styles = {
     cursor: 'pointer',
     fontSize: '1rem',
   },
+  progressContainer: {
+    marginBottom: '1.5rem',
+    background: '#e5e7eb',
+    borderRadius: '999px',
+    overflow: 'hidden',
+    height: '1.2rem',
+    position: 'relative',
+  },
+  progressBar: {
+    background: '#2563eb',
+    height: '100%',
+    transition: 'width 0.2s',
+  },
+  progressText: {
+    position: 'absolute',
+    top: '50%',
+    left: '50%',
+    transform: 'translate(-50%, -50%)',
+    color: 'white',
+    fontSize: '0.75rem',
+    fontWeight: 'bold',
+    mixBlendMode: 'difference',
+  }
 };

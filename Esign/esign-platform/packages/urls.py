@@ -5,6 +5,7 @@ from . import views
 
 urlpatterns = [
     path('', views.PackageListView.as_view(), name='package-list'),
+    path('stats/', views.DashboardStatsView.as_view(), name='package-stats'),
     path('create/', views.PackageCreateView.as_view(), name='package-create'),
     path('<uuid:pk>/send/', views.SendPackageView.as_view(), name='package-send'),
     path('<uuid:pk>/', views.PackageDetailView.as_view(), name='package-detail'),
