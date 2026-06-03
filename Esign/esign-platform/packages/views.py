@@ -16,7 +16,7 @@ from .models import Package, Recipient
 from audit.utils import log_event
 from audit.models import AuditEvent
 
-from notifications.tasks import send_signing_invitation
+from notifications.tasks import send_signing_invitation, send_cc_notification
 from config.pagination import StandardPagination
 
 
@@ -106,6 +106,18 @@ class SendPackageView(APIView):
                 package_subject=package.subject,
                 signing_token=str(r.signing_token)
             )
+
+        # Notify all CC recipients immediately
+        cc_recipients = package.recipients.filter(role=Recipient.Role.CC)
+        for r in cc_recipients:
+            send_cc_notification.delay(
+                recipient_name=r.name,
+                recipient_email=r.email,
+                sender_name=package.sender.get_full_name() or package.sender.email,
+                package_subject=package.subject
+            )
+            r.status = Recipient.Status.SENT
+            r.save()
 
         # Routing logic
         if package.routing_mode == Package.RoutingMode.PARALLEL:

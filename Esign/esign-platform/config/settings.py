@@ -49,6 +49,8 @@ INSTALLED_APPS = [
     'audit',
     'corsheaders',
     'notifications',
+    'django_celery_beat',
+    'webhooks',
 ]
 
 MIDDLEWARE = [

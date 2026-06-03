@@ -180,3 +180,126 @@ def send_password_reset_email(email, reset_url):
         recipient_list=[email],
         fail_silently=False,
     )
+
+@shared_task(
+    autoretry_for=(Exception,),
+    max_retries=3,
+    retry_backoff=60,
+    retry_backoff_max=600,
+    retry_jitter=True,
+)
+def send_cc_notification(
+    recipient_name,
+    recipient_email,
+    sender_name,
+    package_subject
+):
+    subject = f"FYI: You were CC'd on '{package_subject}'"
+
+    message = f"""
+Hi {recipient_name},
+
+{sender_name} has copied you on a document: {package_subject}
+
+You do not need to sign this document. You will receive a copy of the final document once all parties have signed.
+
+Regards,
+eSign Platform
+"""
+
+    send_mail(
+        subject=subject,
+        message=message,
+        from_email=settings.DEFAULT_FROM_EMAIL,
+        recipient_list=[recipient_email],
+        fail_silently=False,
+    )
+
+@shared_task
+def process_expirations():
+    from django.utils import timezone
+    from packages.models import Package, Recipient
+    from audit.utils import log_event
+    from audit.models import AuditEvent
+
+    expired_packages = Package.objects.filter(
+        status=Package.Status.SENT,
+        expires_at__lt=timezone.now()
+    )
+
+    for package in expired_packages:
+        package.status = Package.Status.EXPIRED
+        package.save()
+        
+        package.recipients.filter(
+            status__in=[Recipient.Status.PENDING, Recipient.Status.SENT, Recipient.Status.VIEWED]
+        ).update(status=Recipient.Status.EXPIRED)
+
+        log_event(
+            event_type=AuditEvent.EventType.PACKAGE_EXPIRED,
+            package=package,
+            metadata={"expired_at": package.expires_at.isoformat()}
+        )
+        
+        subject = f"Expired: {package.subject}"
+        message = f"The document '{package.subject}' has expired and can no longer be signed."
+        
+        emails = [package.sender.email] + [r.email for r in package.recipients.all()]
+        
+        send_mail(
+            subject=subject,
+            message=message,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=list(set(emails)),
+            fail_silently=True,
+        )
+
+@shared_task
+def process_reminders():
+    from django.utils import timezone
+    from packages.models import Package, Recipient
+    from audit.utils import log_event
+    from audit.models import AuditEvent
+    import datetime
+
+    # Get packages that are sent and have reminder_days > 0
+    packages = Package.objects.filter(
+        status=Package.Status.SENT,
+        reminder_days__gt=0
+    )
+
+    now = timezone.now()
+
+    for package in packages:
+        # Check if reminder is due
+        # We can use updated_at as the baseline for the next reminder, 
+        # and update it when a reminder is sent. Wait, updating updated_at might have side effects.
+        # Let's find the last reminder audit event.
+        last_reminder = AuditEvent.objects.filter(
+            package=package,
+            event_type=AuditEvent.EventType.REMINDER_SENT
+        ).order_by('-created_at').first()
+        
+        baseline_time = last_reminder.created_at if last_reminder else package.created_at
+        
+        if now >= baseline_time + datetime.timedelta(days=package.reminder_days):
+            # Send reminder to pending/sent/viewed signers
+            signers = package.recipients.filter(
+                role=Recipient.Role.SIGNER,
+                status__in=[Recipient.Status.PENDING, Recipient.Status.SENT, Recipient.Status.VIEWED]
+            )
+            
+            for r in signers:
+                send_signing_invitation.delay(
+                    recipient_name=r.name,
+                    recipient_email=r.email,
+                    sender_name=package.sender.get_full_name() or package.sender.email,
+                    package_subject=package.subject,
+                    signing_token=str(r.signing_token)
+                )
+                
+            log_event(
+                event_type=AuditEvent.EventType.REMINDER_SENT,
+                package=package,
+                metadata={"reminder_days": package.reminder_days, "recipients": [r.email for r in signers]}
+            )

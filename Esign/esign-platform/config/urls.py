@@ -41,4 +41,5 @@ urlpatterns = [
     path('api/packages/', include('packages.urls')),
     path('api/signing/', include('signing.urls')),
     path('api/audit/', include('audit.urls')),
+    path('api/webhooks/', include('webhooks.urls')),
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

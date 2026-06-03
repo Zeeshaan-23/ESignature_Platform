@@ -56,6 +56,7 @@ class Package(models.Model):
     )
 
     expires_at = models.DateTimeField(null=True, blank=True)
+    reminder_days = models.PositiveIntegerField(default=0, help_text="Send reminders every N days. 0 disables reminders.")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
