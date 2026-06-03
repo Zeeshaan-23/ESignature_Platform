@@ -17,6 +17,8 @@ class AuditEvent(models.Model):
         PACKAGE_EXPIRED     = 'package.expired',     'Package Expired'
         PACKAGE_DECLINED    = 'package.declined',    'Package Declined'
         PACKAGE_CANCELLED   = 'package.cancelled',   'Package Cancelled'
+        REMINDER_SENT       = 'reminder.sent',       'Reminder Sent'
+        LINK_RESENT         = 'link.resent',         'Link Resent'
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
@@ -34,7 +36,7 @@ class AuditEvent(models.Model):
     # Always link to the package for easy filtering
     package = models.ForeignKey(
         'packages.Package',
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
         related_name='audit_events',
         null=True,
         blank=True,
