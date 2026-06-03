@@ -17,3 +17,9 @@ export const registerUser = (email, firstName, lastName, password) =>
 export const getMe = () => api.get('/users/me/');
 
 export const logoutUser = () => api.post('/users/logout/');
+
+export const forgotPassword = (email) =>
+  api.post('/users/password-reset/', { email });
+
+export const resetPassword = (uid, token, new_password) =>
+  api.post('/users/password-reset/confirm/', { uid, token, new_password });

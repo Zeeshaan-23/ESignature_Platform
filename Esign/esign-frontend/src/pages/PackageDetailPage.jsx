@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { getPackage } from '../api/packages';
+import { toast } from 'react-toastify';
+import { getPackage, cancelPackage } from '../api/packages';
 
 export default function PackageDetailPage() {
   const { id } = useParams();
@@ -53,21 +54,39 @@ export default function PackageDetailPage() {
               Status: <strong>{pkg.status}</strong>
             </p>
             {pkg.status === 'COMPLETED' && pkg.signed_file_url && (
-  
-                <a href={pkg.signed_file_url}
-                  target="_blank"
-                  rel="noreferrer"
-                  style={styles.downloadBtn}
-                >
-                  ⬇ Download Signed Document
-                </a>
-              )}
-              <button
-                onClick={() => navigate(`/packages/${id}/audit`)}
-                style={styles.auditBtn}
+              <a href={pkg.signed_file_url}
+                target="_blank"
+                rel="noreferrer"
+                style={styles.downloadBtn}
               >
-                View Audit Trail
+                ⬇ Download Signed Document
+              </a>
+            )}
+          </div>
+          <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+            <button
+              onClick={() => navigate(`/packages/${id}/audit`)}
+              style={styles.auditBtn}
+            >
+              View Audit Trail
+            </button>
+            {['SENT', 'IN_PROGRESS', 'DRAFT'].includes(pkg.status) && (
+              <button
+                onClick={async () => {
+                  if (!window.confirm('Cancel this package? This cannot be undone.')) return;
+                  try {
+                    await cancelPackage(id);
+                    toast.success('Package cancelled.');
+                    setPkg({ ...pkg, status: 'CANCELLED' });
+                  } catch {
+                    toast.error('Failed to cancel package.');
+                  }
+                }}
+                style={styles.cancelBtn}
+              >
+                Cancel Package
               </button>
+            )}
           </div>
         </div>
 
@@ -150,6 +169,10 @@ const styles = {
 
   header: {
     marginBottom: '2rem',
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: '1rem',
   },
 
   title: {
@@ -234,6 +257,15 @@ const styles = {
     background: 'transparent',
     border: '1px solid #2563eb',
     color: '#2563eb',
+    borderRadius: '4px',
+    cursor: 'pointer',
+    fontSize: '0.9rem',
+  },
+  cancelBtn: {
+    padding: '0.5rem 1rem',
+    background: 'transparent',
+    border: '1px solid #dc2626',
+    color: '#dc2626',
     borderRadius: '4px',
     cursor: 'pointer',
     fontSize: '0.9rem',

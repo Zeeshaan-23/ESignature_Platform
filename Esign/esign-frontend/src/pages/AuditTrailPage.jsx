@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { getAuditTrail, getPackage } from '../api/packages';
+import { toast } from 'react-toastify';
+import { getAuditTrail, getPackage, downloadAuditCSV, downloadAuditJSON } from '../api/packages';
 
 const EVENT_LABELS = {
   'document.uploaded': {label: 'Document Uploaded', color: '#0891b2'},
@@ -24,6 +25,21 @@ export default function AuditTrailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
+  // Generic blob download helper
+  const triggerDownload = async (apiFn, filename) => {
+    try {
+      const res = await apiFn(id);
+      const url = window.URL.createObjectURL(new Blob([res.data]));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.click();
+      window.URL.revokeObjectURL(url);
+    } catch {
+      toast.error('Export failed. Please try again.');
+    }
+  };
+
   useEffect(() => {
     Promise.all([getAuditTrail(id), getPackage(id)])
       .then(([auditRes, pkgRes]) => {
@@ -44,9 +60,23 @@ export default function AuditTrailPage() {
         <button onClick={() => navigate(`/packages/${id}`)} style={styles.backBtn}>
           ← Back to Package
         </button>
-        <div>
+        <div style={{ flex: 1 }}>
           <h2 style={styles.title}>Audit Trail</h2>
           <p style={styles.subtitle}>{pkg?.subject}</p>
+        </div>
+        <div style={{ display: 'flex', gap: '0.5rem' }}>
+          <button
+            onClick={() => triggerDownload(downloadAuditCSV, `audit_${id}.csv`)}
+            style={styles.exportBtn}
+          >
+            ⬇ CSV
+          </button>
+          <button
+            onClick={() => triggerDownload(downloadAuditJSON, `audit_${id}.json`)}
+            style={styles.exportBtn}
+          >
+            ⬇ JSON
+          </button>
         </div>
       </div>
 
@@ -173,6 +203,15 @@ const styles = {
     borderRadius: '4px',
     cursor: 'pointer',
     fontSize: '0.9rem',
+    whiteSpace: 'nowrap',
+  },
+  exportBtn: {
+    padding: '0.4rem 0.8rem',
+    background: '#f3f4f6',
+    border: '1px solid #ddd',
+    borderRadius: '4px',
+    cursor: 'pointer',
+    fontSize: '0.85rem',
     whiteSpace: 'nowrap',
   },
   title: { margin: 0, marginBottom: '0.2rem' },

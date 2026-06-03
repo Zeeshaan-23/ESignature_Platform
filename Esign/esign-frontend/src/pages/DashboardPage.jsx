@@ -76,6 +76,13 @@ export default function DashboardPage() {
           </button>
 
           <button
+            onClick={() => navigate('/webhooks')}
+            style={styles.webhooksBtn}
+          >
+            🔔 Webhooks
+          </button>
+
+          <button
             onClick={logout}
             style={styles.logoutBtn}
           >
@@ -206,6 +213,16 @@ const styles = {
   logoutBtn: {
     padding: '0.75rem 1.2rem',
     background: '#ef4444',
+    color: 'white',
+    border: 'none',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    fontWeight: '500',
+  },
+
+  webhooksBtn: {
+    padding: '0.75rem 1.2rem',
+    background: '#7c3aed',
     color: 'white',
     border: 'none',
     borderRadius: '6px',

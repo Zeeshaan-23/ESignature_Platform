@@ -68,6 +68,10 @@ export default function LoginPage() {
           </button>
         </form>
 
+        <p style={{ ...styles.link, marginTop: '0.75rem' }}>
+          <Link to="/forgot-password" style={{ color: '#2563eb' }}>Forgot your password?</Link>
+        </p>
+
         <p style={styles.link}>
           Don't have an account? <Link to="/register">Register</Link>
         </p>
