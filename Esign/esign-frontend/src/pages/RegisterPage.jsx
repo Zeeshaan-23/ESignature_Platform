@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { registerUser } from '../api/auth';
 import { useAuth } from '../context/AuthContext';
+import { toast } from 'react-toastify';
 
 export default function RegisterPage() {
   const [formData, setFormData] = useState({
@@ -47,14 +48,15 @@ export default function RegisterPage() {
         formData.password
       );
       login(res.data.user);
+      toast.success('Account created successfully!');
       navigate('/');
     } catch (err) {
       const data = err.response?.data;
-      if (data?.email) {
-        setError('An account with this email already exists.');
-      } else {
-        setError('Registration failed. Please try again.');
-      }
+      const msg = data?.email 
+        ? 'An account with this email already exists.'
+        : 'Registration failed. Please try again.';
+      setError(msg);
+      toast.error(msg);
     } finally {
       setLoading(false);
     }

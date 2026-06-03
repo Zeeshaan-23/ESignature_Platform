@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { loginUser } from '../api/auth';
 import { useAuth } from '../context/AuthContext';
+import { toast } from 'react-toastify';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -22,9 +23,12 @@ export default function LoginPage() {
     try {
       const res = await loginUser(email, password);
       login(res.data.user);
+      toast.success('Logged in successfully!');
       navigate('/');
     } catch (err) {
-      setError('Invalid email or password.');
+      const msg = 'Invalid email or password.';
+      setError(msg);
+      toast.error(msg);
     } finally {
       setLoading(false);
     }

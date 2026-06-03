@@ -1,6 +1,9 @@
 // src/App.jsx
 
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { ToastContainer } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
+
 import { AuthProvider, useAuth } from './context/AuthContext';
 
 import LoginPage from './pages/LoginPage';
@@ -33,6 +36,7 @@ export default function App() {
           <Route path="/packages/:id/audit"element={<ProtectedRoute><AuditTrailPage /></ProtectedRoute>} />
         </Routes>
       </BrowserRouter>
+      <ToastContainer position="top-right" autoClose={3000} />
     </AuthProvider>
   );
 }

@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { toast } from 'react-toastify';
 import { createPackage, sendPackage } from '../api/packages';
 
 export default function CreatePackagePage() {
@@ -55,14 +56,15 @@ export default function CreatePackagePage() {
 
       // Send immediately after creating
       await sendPackage(packageId);
+      toast.success('Package created and sent successfully!');
       navigate(`/packages/${packageId}`);
     } catch (err) {
       const data = err.response?.data;
-      setError(
-        typeof data === 'object'
+      const errorMsg = typeof data === 'object'
           ? JSON.stringify(data)
-          : 'Failed to create package.'
-      );
+          : 'Failed to create package.';
+      setError(errorMsg);
+      toast.error(errorMsg);
     } finally {
       setLoading(false);
     }

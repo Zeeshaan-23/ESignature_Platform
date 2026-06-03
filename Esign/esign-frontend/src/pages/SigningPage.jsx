@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { Document, Page, pdfjs } from 'react-pdf';
 import { getSigningLink, submitSignature } from '../api/signing';
+import { toast } from 'react-toastify';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
 
@@ -110,8 +111,11 @@ export default function SigningPage() {
       setSubmitting(true);
       await submitSignature(token, signatureData);
       setCompleted(true);
+      toast.success('Signature submitted successfully!');
     } catch (err) {
-      setError('Failed to submit signature. Please try again.');
+      const msg = 'Failed to submit signature. Please try again.';
+      setError(msg);
+      toast.error(msg);
     } finally {
       setSubmitting(false);
     }
