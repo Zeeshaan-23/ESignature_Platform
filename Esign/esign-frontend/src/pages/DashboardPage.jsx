@@ -17,6 +17,7 @@ export default function DashboardPage() {
   const [hasPrev, setHasPrev] = useState(false);
 
   const navigate = useNavigate();
+  const { user, logout } = useAuth();
 
   const [stats, setStats] = useState({ total: 0, completed: 0, pending: 0, drafts: 0, chart_data: [] });
   const [statsLoading, setStatsLoading] = useState(true);
